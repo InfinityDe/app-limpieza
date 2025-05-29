@@ -508,18 +508,51 @@
              });
              document.querySelectorAll('.eliminar-tarea-btn').forEach(b => b.onclick = e => eliminarTarea(e.currentTarget.dataset.id, e.currentTarget.dataset.nombre));
         }
-        function renderHistorial(historial) {
-             loadingHistorialP.textContent = "Cargando..."; tablaHistorialBody.innerHTML = '';
-             if (historial.length === 0) { loadingHistorialP.textContent = ""; tablaHistorialBody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center">No hay historial.</td></tr>`; return; }
+function renderHistorial(historialItems) { // Cambié el nombre del parámetro para evitar confusión con la variable global
+             loadingHistorialP.textContent = "Cargando...";
+             tablaHistorialBody.innerHTML = '';
+             if (historialItems.length === 0) {
+                 loadingHistorialP.textContent = "";
+                 tablaHistorialBody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center">No hay historial.</td></tr>`;
+                 return;
+             }
              loadingHistorialP.textContent = "";
-             historial.forEach((item, index) => {
-                 const tr = document.createElement('tr'); tr.className = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
-                 const ff = item.fechaCompletada ? item.fechaCompletada.toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : 'N/A';
-                 tr.innerHTML = `<td class="px-6 py-4">${item.nombreTarea || '?'}</td><td class="px-6 py-4">${item.nombreZona || '?'}</td><td class="px-6 py-4">${item.nombreEmpleado || '?'}</td><td class="px-6 py-4">${ff}</td><td class="px-6 py-4">${item.observaciones || '-'}</td>`;
+             historialItems.forEach((item, index) => {
+                 const tr = document.createElement('tr');
+                 tr.className = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+
+                 // --- INICIO DE LA CORRECCIÓN ---
+                 let fechaFormateada = 'N/A';
+                 if (item.fechaCompletada && item.fechaCompletada.toDate) { // Verificar que es un Timestamp de Firebase
+                     const jsDateObject = item.fechaCompletada.toDate(); // Convertir a objeto Date de JavaScript
+                     fechaFormateada = jsDateObject.toLocaleString('es-ES', {
+                         day: '2-digit',
+                         month: '2-digit',
+                         year: 'numeric',
+                         hour: '2-digit',
+                         minute: '2-digit'
+                     });
+                 } else if (item.fechaCompletada) { // Fallback por si ya fuera un Date o string (menos probable aquí)
+                     try {
+                        fechaFormateada = new Date(item.fechaCompletada).toLocaleString('es-ES', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        });
+                        if (fechaFormateada === "Invalid Date") fechaFormateada = 'N/A';
+                     } catch (e) {
+                        fechaFormateada = 'N/A';
+                     }
+                 }
+                 // --- FIN DE LA CORRECCIÓN ---
+
+                 tr.innerHTML = `<td class="px-6 py-4">${item.nombreTarea || '?'}</td><td class="px-6 py-4">${item.nombreZona || '?'}</td><td class="px-6 py-4">${item.nombreEmpleado || '?'}</td><td class="px-6 py-4">${fechaFormateada}</td><td class="px-6 py-4">${item.observaciones || '-'}</td>`;
                  tablaHistorialBody.appendChild(tr);
              });
         }
-
+        
         // --- CRUD Firestore ---
         async function agregarZona(nombre) {
             if (!currentUserId || !nombre) return; showLoading("Agregando...");
