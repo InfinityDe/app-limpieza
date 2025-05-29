@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de Limpieza del Local (Firebase + IA)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: '#1D4ED8',
+                        secondary: '#10B981',
+                        lightgray: '#F3F4F6',
+                        mediumgray: '#9CA3AF',
+                        darkgray: '#4B5563',
+                        voice: '#9333EA',
+                        suggestion: '#F59E0B',
+                        google: '#DB4437',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #F3F4F6; }
+        .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); }
+        .modal-content { background-color: #fefefe; margin: 10% auto; padding: 20px; border: 1px solid #888; width: 80%; max-width: 500px; border-radius: 0.5rem; }
+        .close-button { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .tab-button.active { border-bottom-width: 2px; border-color: #1D4ED8; color: #1D4ED8; font-weight: 600; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 10px; }
+        .voice-btn { background-color: #9333EA; color: white; }
+        .voice-btn:hover { background-color: #7E22CE; }
+        .voice-btn.recording { animation: pulse 1.5s infinite; }
+        @keyframes pulse {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(147, 51, 234, 0.7); }
+            70% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(147, 51, 234, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(147, 51, 234, 0); }
+        }
+        #voiceStatus { margin-top: 10px; font-style: italic; color: #4B5563; min-height: 2em; }
+        .suggestion-btn { background-color: #F59E0B; color: white; font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 0.25rem; }
+        .suggestion-btn:hover { background-color: #D97706; }
+        .suggestion-btn:disabled { background-color: #FDE68A; cursor: not-allowed; }
+        #sugerenciasTareasContainer { margin-top: 1rem; padding: 0.75rem; background-color: #FFFBEB; border-left: 4px solid #FBBF24; border-radius: 0.25rem;}
+        #sugerenciasTareasContainer ul { list-style-type: disc; margin-left: 1.5rem; }
+        #sugerenciasTareasContainer li { cursor: pointer; padding: 0.25rem 0; }
+        #sugerenciasTareasContainer li:hover { color: #D97706; text-decoration: underline; }
+        .ia-loading-indicator { font-size: 0.75rem; font-style: italic; color: #6B7280; }
+        #fechaEspecificaContainer.hidden { display: none; }
+        #appContainer.hidden { display: none; }
+        #loginContainer { text-align: center; margin-top: 20%; }
+        #loadingOverlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(255, 255, 255, 0.8); z-index: 9999;
+            display: flex; justify-content: center; align-items: center;
+            font-size: 1.2em; color: #333; flex-direction: column;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3; border-top: 4px solid #1D4ED8;
+            border-radius: 50%; width: 40px; height: 40px;
+            animation: spin 1s linear infinite; margin-bottom: 15px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-lightgray text-darkgray">
+
+    <div id="loadingOverlay">
+        <div class="spinner"></div>
+        <p>Cargando aplicación...</p>
+    </div>
+
+    <div id="loginContainer" class="container mx-auto p-8 max-w-md bg-white rounded-lg shadow-xl text-center">
+        <h1 class="text-3xl font-bold text-primary mb-6">Control de Limpieza</h1>
+        <p class="text-mediumgray mb-8">Por favor, inicia sesión con tu cuenta de Google para continuar.</p>
+        <button id="loginButton" class="w-full bg-google text-white py-3 px-6 rounded-lg shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-google transition transform hover:scale-105">
+            <i class="fab fa-google mr-2"></i> Iniciar Sesión con Google
+        </button>
+    </div>
+
+    <div id="appContainer" class="hidden container mx-auto p-4 md:p-8 max-w-4xl">
+
+        <div class="flex justify-between items-center mb-6">
+             <h1 class="text-3xl md:text-4xl font-bold text-primary">Control de Limpieza</h1>
+             <div class="text-right">
+                <p id="userInfo" class="text-sm text-darkgray"></p>
+                <button id="logoutButton" class="text-xs text-red-500 hover:underline">Cerrar Sesión</button>
+             </div>
+        </div>
+        <p class="text-sm text-mediumgray mt-2 text-center mb-8">(Firebase + Control por Voz y Sugerencias con IA)</p>
+
+
+        <div class="mb-6 bg-white p-6 rounded-lg shadow-md text-center">
+             <h2 class="text-xl font-semibold mb-3 text-voice">Control Rápido por Voz ✨</h2>
+             <button id="voiceCommandBtn" class="voice-btn py-3 px-6 rounded-full shadow-lg hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-voice transition transform hover:scale-105">
+                 <i class="fas fa-microphone-alt mr-2"></i> Presiona y Habla
+             </button>
+             <div id="voiceStatus">Di algo como: "Juan limpió la cocina"</div>
+        </div>
+
+        <div class="mb-6 border-b border-gray-300">
+            <nav class="flex space-x-2 md:space-x-4" aria-label="Tabs">
+                <button data-tab="checklist" class="tab-button active py-3 px-2 md:px-4 text-gray-500 hover:text-primary focus:outline-none text-sm md:text-base">Checklist Hoy</button>
+                <button data-tab="configuracion" class="tab-button py-3 px-2 md:px-4 text-gray-500 hover:text-primary focus:outline-none text-sm md:text-base">Configuración</button>
+                <button data-tab="empleados" class="tab-button py-3 px-2 md:px-4 text-gray-500 hover:text-primary focus:outline-none text-sm md:text-base">Empleados</button>
+                <button data-tab="historial" class="tab-button py-3 px-2 md:px-4 text-gray-500 hover:text-primary focus:outline-none text-sm md:text-base">Historial</button>
+            </nav>
+        </div>
+
+        <main>
+            <div id="tab-content-checklist" class="tab-pane active-pane">
+                 <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h2 class="text-2xl font-semibold mb-2 text-primary">Tareas para Hoy: <span id="fechaActual" class="font-normal"></span></h2>
+                    <p id="loadingChecklist" class="text-mediumgray">Cargando tareas...</p>
+                    <div id="tareasPendientesContainer" class="space-y-4"></div>
+                 </div>
+            </div>
+
+            <div id="tab-content-configuracion" class="tab-pane hidden">
+                 <div class="grid md:grid-cols-2 gap-6">
+                    <div class="bg-white p-6 rounded-lg shadow-md">
+                        <h3 class="text-xl font-semibold mb-4 text-primary">Gestionar Zonas</h3>
+                        <form id="formAgregarZona" class="space-y-3 mb-4">
+                            <div>
+                                <label for="nombreZona" class="block text-sm font-medium text-gray-700">Nombre Zona:</label>
+                                <input type="text" id="nombreZona" name="nombreZona" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+                            </div>
+                            <button type="submit" class="w-full bg-primary text-white py-2 px-4 rounded-md">Agregar Zona</button>
+                        </form>
+                        <h4 class="text-md font-semibold mt-6 mb-2">Zonas Existentes:</h4>
+                        <ul id="listaZonas" class="space-y-2 max-h-60 overflow-y-auto"></ul>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-md">
+                        <h3 class="text-xl font-semibold mb-4 text-primary">Gestionar Tareas</h3>
+                        <div id="sugerenciasTareasContainer" class="hidden mb-4">
+                            <h5 class="font-semibold text-sm text-suggestion mb-1">Sugerencias de Tareas para "<span id="sugerenciasZonaNombre"></span>":</h5>
+                            <ul id="listaSugerenciasTareas"></ul>
+                            <p id="sugerenciasLoading" class="ia-loading-indicator hidden">Obteniendo sugerencias con IA...</p>
+                        </div>
+                        <form id="formAgregarTarea" class="space-y-3 mb-4">
+                             <div>
+                                <label for="nombreTarea" class="block text-sm font-medium">Nombre Tarea:</label>
+                                <input type="text" id="nombreTarea" name="nombreTarea" required class="mt-1 block w-full px-3 py-2 border rounded-md">
+                             </div>
+                             <div class="text-right">
+                                <button type="button" id="btnGenerarDescripcion" class="text-xs text-voice hover:underline focus:outline-none" disabled>Generar Descripción ✨</button>
+                             </div>
+                             <div>
+                                <label for="descripcionTarea" class="block text-sm font-medium">Descripción (opc):</label>
+                                <textarea id="descripcionTarea" name="descripcionTarea" rows="2" class="mt-1 block w-full px-3 py-2 border rounded-md"></textarea>
+                                <p id="descripcionLoading" class="ia-loading-indicator hidden text-right">Generando descripción con IA...</p>
+                             </div>
+                             <div>
+                                <label for="zonaTarea" class="block text-sm font-medium">Zona:</label>
+                                <select id="zonaTarea" name="zonaTarea" required class="mt-1 block w-full px-3 py-2 border rounded-md"></select>
+                             </div>
+                             <div>
+                                <label for="frecuenciaTarea" class="block text-sm font-medium">Frecuencia:</label>
+                                <select id="frecuenciaTarea" name="frecuenciaTarea" required class="mt-1 block w-full px-3 py-2 border rounded-md">
+                                    <option value="diaria">Diaria</option>
+                                    <option value="lunes">Semanal - Lunes</option>
+                                    <option value="martes">Semanal - Martes</option>
+                                    <option value="miercoles">Semanal - Miércoles</option>
+                                    <option value="jueves">Semanal - Jueves</option>
+                                    <option value="viernes">Semanal - Viernes</option>
+                                    <option value="sabado">Semanal - Sábado</option>
+                                    <option value="domingo">Semanal - Domingo</option>
+                                    <option value="fecha_especifica">Fecha Específica</option>
+                                </select>
+                             </div>
+                             <div id="fechaEspecificaContainer" class="hidden">
+                                <label for="fechaEspecificaTarea" class="block text-sm font-medium">Seleccionar Fecha:</label>
+                                <input type="date" id="fechaEspecificaTarea" name="fechaEspecificaTarea" class="mt-1 block w-full px-3 py-2 border rounded-md">
+                             </div>
+                            <button type="submit" class="w-full bg-primary text-white py-2 px-4 rounded-md">Agregar Tarea</button>
+                        </form>
+                        <h4 class="text-md font-semibold mt-6 mb-2">Tareas Existentes:</h4>
+                        <ul id="listaTareas" class="space-y-2 max-h-96 overflow-y-auto"></ul>
+                    </div>
+                 </div>
+            </div>
+
+            <div id="tab-content-empleados" class="tab-pane hidden">
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h3 class="text-xl font-semibold mb-4 text-primary">Gestionar Empleados</h3>
+                    <form id="formAgregarEmpleado" class="space-y-3 mb-4">
+                        <div>
+                            <label for="nombreEmpleado" class="block text-sm font-medium text-gray-700">Nombre Empleado:</label>
+                            <input type="text" id="nombreEmpleado" name="nombreEmpleado" required class="mt-1 block w-full px-3 py-2 border rounded-md">
+                        </div>
+                        <button type="submit" class="w-full bg-primary text-white py-2 px-4 rounded-md">Agregar Empleado</button>
+                    </form>
+                    <h4 class="text-md font-semibold mt-6 mb-2">Empleados Existentes:</h4>
+                    <ul id="listaEmpleados" class="space-y-2 max-h-60 overflow-y-auto"></ul>
+                </div>
+            </div>
+
+            <div id="tab-content-historial" class="tab-pane hidden">
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h2 class="text-2xl font-semibold mb-4 text-primary">Historial</h2>
+                    <p id="loadingHistorial" class="text-mediumgray">Cargando...</p>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium">Tarea</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium">Zona</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium">Realizado por</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium">Fecha</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium">Observaciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tablaHistorialBody" class="bg-white divide-y"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="modalObservaciones" class="modal">
+         <div class="modal-content">
+            <span class="close-button" id="closeModalObservaciones">&times;</span>
+            <h3 class="text-lg font-semibold mb-3 text-primary">Agregar Observaciones</h3>
+            <p id="modalTareaInfo" class="text-sm text-gray-600 mb-3"></p>
+            <div class="mb-3">
+                <label for="empleadoCompletadoSelect" class="block text-sm font-medium">Completado por:</label>
+                <select id="empleadoCompletadoSelect" name="empleadoCompletadoSelect" required class="mt-1 block w-full px-3 py-2 border rounded-md"></select>
+            </div>
+            <textarea id="observacionesTarea" rows="3" class="w-full px-3 py-2 border rounded-md" placeholder="Observaciones..."></textarea>
+            <div class="mt-4 flex justify-end space-x-2">
+                <button id="cancelarObservaciones" class="px-4 py-2 text-sm bg-gray-200 rounded-md">Cancelar</button>
+                <button id="guardarObservaciones" class="px-4 py-2 text-sm text-white bg-secondary rounded-md">Guardar</button>
+            </div>
+         </div>
+    </div>
+
+    <div id="messageModal" class="modal">
+        <div class="modal-content">
+            <span class="close-button" id="closeMessageModal">&times;</span>
+            <h3 id="messageModalTitle" class="text-lg font-semibold mb-3"></h3>
+            <p id="messageModalText"></p>
+            <div class="mt-4 flex justify-end">
+                <button id="okMessageModal" class="px-4 py-2 text-sm text-white bg-primary rounded-md">Entendido</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script type="module">
+        // Importar Gemini API
+        import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "https://esm.run/@google/generative-ai";
+
+        // Importar Firebase
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.8.1/firebase-app.js";
+        import {
+            getAuth,
+            GoogleAuthProvider,
+            signInWithPopup,
+            signOut,
+            onAuthStateChanged
+        } from "https://www.gstatic.com/firebasejs/11.8.1/firebase-auth.js";
+        import {
+            getFirestore,
+            collection,
+            addDoc,
+            getDocs,
+            doc,
+            deleteDoc,
+            updateDoc,
+            onSnapshot,
+            query,
+            where,
+            orderBy,
+            serverTimestamp,
+            Timestamp
+        } from "https://www.gstatic.com/firebasejs/11.8.1/firebase-firestore.js";
+
+        // --- Configuración Firebase ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyAqWnWQeaRBRsZUJG3az7zaTLgPCcOnYeg", // TU API KEY DE FIREBASE
+            authDomain: "software-de-limpieza.firebaseapp.com",
+            projectId: "software-de-limpieza",
+            storageBucket: "software-de-limpieza.firebasestorage.app",
+            messagingSenderId: "936682259559",
+            appId: "1:936682259559:web:fd21fe6d871873729600c2",
+            measurementId: "G-L3T3BCRY7S"
+        };
+        // --- Configuración Gemini ---
+        const GEMINI_API_KEY = "AIzaSyD7-rBCQcgKThNxr9q2ztvkkgk-ymetovw"; // TU API KEY DE GEMINI
+
+        // Inicializar Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const provider = new GoogleAuthProvider();
+
+        // Variables Globales
+        let currentUserId = null;
+        let zonasMap = new Map();
+        let empleadosMap = new Map();
+        let tareasList = [];
+        let historialList = [];
+        let unsubscribeListeners = [];
+        let genAI;
+        let model;
+        let currentTareaIdParaObservaciones = null;
+        let recognition;
+        let isRecording = false;
+
+        // Elementos del DOM (Se obtienen una vez para mejor rendimiento)
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const loginContainer = document.getElementById('loginContainer');
+        const appContainer = document.getElementById('appContainer');
+        const loginButton = document.getElementById('loginButton');
+        const logoutButton = document.getElementById('logoutButton');
+        const userInfo = document.getElementById('userInfo');
+        const fechaActualDisplay = document.getElementById('fechaActual');
+        const formAgregarZona = document.getElementById('formAgregarZona');
+        const listaZonasUl = document.getElementById('listaZonas');
+        const zonaTareaSelect = document.getElementById('zonaTarea');
+        const formAgregarTarea = document.getElementById('formAgregarTarea');
+        const listaTareasUl = document.getElementById('listaTareas');
+        const tareasPendientesContainer = document.getElementById('tareasPendientesContainer');
+        const loadingChecklistP = document.getElementById('loadingChecklist');
+        const tablaHistorialBody = document.getElementById('tablaHistorialBody');
+        const loadingHistorialP = document.getElementById('loadingHistorial');
+        const modalObservaciones = document.getElementById('modalObservaciones');
+        const closeModalObservacionesBtn = document.getElementById('closeModalObservaciones');
+        const observacionesTareaTextarea = document.getElementById('observacionesTarea');
+        const guardarObservacionesBtn = document.getElementById('guardarObservaciones');
+        const cancelarObservacionesBtn = document.getElementById('cancelarObservaciones');
+        const modalTareaInfoP = document.getElementById('modalTareaInfo');
+        const messageModal = document.getElementById('messageModal');
+        const messageModalTitle = document.getElementById('messageModalTitle');
+        const messageModalText = document.getElementById('messageModalText');
+        const closeMessageModalBtn = document.getElementById('closeMessageModal');
+        let okMessageModalBtn = document.getElementById('okMessageModal');
+        const formAgregarEmpleado = document.getElementById('formAgregarEmpleado');
+        const listaEmpleadosUl = document.getElementById('listaEmpleados');
+        const empleadoCompletadoSelect = document.getElementById('empleadoCompletadoSelect');
+        const voiceCommandBtn = document.getElementById('voiceCommandBtn');
+        const voiceStatus = document.getElementById('voiceStatus');
+        const sugerenciasTareasContainer = document.getElementById('sugerenciasTareasContainer');
+        const listaSugerenciasTareas = document.getElementById('listaSugerenciasTareas');
+        const sugerenciasZonaNombre = document.getElementById('sugerenciasZonaNombre');
+        const sugerenciasLoading = document.getElementById('sugerenciasLoading');
+        const btnGenerarDescripcion = document.getElementById('btnGenerarDescripcion');
+        const descripcionLoading = document.getElementById('descripcionLoading');
+        const nombreTareaInput = document.getElementById('nombreTarea');
+        const descripcionTareaTextarea = document.getElementById('descripcionTarea');
+        const frecuenciaTareaSelect = document.getElementById('frecuenciaTarea');
+        const fechaEspecificaContainer = document.getElementById('fechaEspecificaContainer');
+        const fechaEspecificaTareaInput = document.getElementById('fechaEspecificaTarea');
+
+        // --- Control de Carga ---
+        function showLoading(message = "Cargando...") {
+            loadingOverlay.querySelector('p').textContent = message;
+            loadingOverlay.style.display = 'flex';
+        }
+        function hideLoading() {
+            loadingOverlay.style.display = 'none';
+        }
+
+        // --- Autenticación ---
+        loginButton.addEventListener('click', async () => {
+            showLoading("Iniciando sesión...");
+            try {
+                await signInWithPopup(auth, provider);
+            } catch (error) {
+                console.error("Error al iniciar sesión:", error);
+                mostrarMensaje("Error de Sesión", `No se pudo iniciar sesión: ${error.message}`);
+                hideLoading();
+            }
+        });
+
+        logoutButton.addEventListener('click', async () => {
+            showLoading("Cerrando sesión...");
+            try {
+                await signOut(auth);
+            } catch (error) {
+                console.error("Error al cerrar sesión:", error);
+                mostrarMensaje("Error", `No se pudo cerrar sesión: ${error.message}`);
+                hideLoading();
+            }
+        });
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUserId = user.uid;
+                userInfo.textContent = user.displayName || user.email;
+                loginContainer.style.display = 'none';
+                appContainer.classList.remove('hidden');
+                setupFirestoreListeners();
+                initializeGemini();
+                initializeSpeechRecognition();
+                setTimeout(hideLoading, 500);
+            } else {
+                currentUserId = null;
+                userInfo.textContent = '';
+                loginContainer.style.display = 'block';
+                appContainer.classList.add('hidden');
+                cleanupFirestoreListeners();
+                // Limpiar UI
+                renderZonas([]); renderEmpleados([]); renderTareas([]); renderHistorial([]);
+                cargarChecklist(); // Mostrará mensaje de inicio de sesión
+                hideLoading();
+            }
+        });
+
+        // --- Inicialización IA y Voz ---
+        function initializeGemini() { /* ... (igual que antes) ... */
+             if (!GEMINI_API_KEY) { console.warn("API Key de Gemini no configurada."); if(btnGenerarDescripcion) btnGenerarDescripcion.disabled = true; return; }
+             try {
+                 genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+                 model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+                 console.log("Gemini AI inicializado."); if(btnGenerarDescripcion) btnGenerarDescripcion.disabled = !nombreTareaInput.value.trim();
+             } catch(error) { console.error("Error inicializando Gemini AI:", error); mostrarMensaje("Error de IA", "No se pudo inicializar la API de Gemini."); if(btnGenerarDescripcion) btnGenerarDescripcion.disabled = true;}
+        }
+        function initializeSpeechRecognition() { /* ... (igual que antes) ... */
+            const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (SpeechRecognitionAPI && voiceCommandBtn) {
+                recognition = new SpeechRecognitionAPI();
+                recognition.continuous = false; recognition.lang = 'es-AR'; recognition.interimResults = false; recognition.maxAlternatives = 1;
+                recognition.onstart = () => { isRecording = true; voiceStatus.textContent = 'Escuchando...'; voiceCommandBtn.classList.add('recording'); voiceCommandBtn.disabled = true; };
+                recognition.onresult = async (event) => { const transcript = event.results[0][0].transcript; voiceStatus.textContent = `Dijiste: "${transcript}". Procesando...`; await procesarComandoVoz(transcript); };
+                recognition.onerror = (event) => { console.error('Error Voz:', event.error); let msg = 'Error de voz.'; if (event.error === 'no-speech') msg = 'No se detectó voz.'; if (event.error === 'not-allowed') msg = 'Permiso micrófono denegado.'; voiceStatus.textContent = msg; mostrarMensaje("Error Voz", msg); };
+                recognition.onend = () => { isRecording = false; voiceCommandBtn.classList.remove('recording'); voiceCommandBtn.disabled = false; setTimeout(() => { if (!voiceStatus.textContent.includes('Procesando') && !voiceStatus.textContent.includes('Listo')) voiceStatus.textContent = 'Di: "Juan limpió cocina"'; }, 3000); };
+                voiceCommandBtn.disabled = false; voiceCommandBtn.innerHTML = '<i class="fas fa-microphone-alt mr-2"></i> Presiona y Habla';
+            } else if (voiceCommandBtn) { voiceStatus.textContent = 'Voz no soportada.'; voiceCommandBtn.disabled = true; voiceCommandBtn.innerHTML = '<i class="fas fa-microphone-slash mr-2"></i> Voz no disponible'; }
+        }
+
+        // --- Listeners y Renderizado Firestore ---
+        function setupFirestoreListeners() {
+            if (!currentUserId) return;
+            cleanupFirestoreListeners();
+
+            const createListener = (collectionName, orderByField, renderFunction, listVariableSetter = null) => {
+                const ref = collection(db, "users", currentUserId, collectionName);
+                const q = query(ref, orderBy(orderByField));
+                const unsub = onSnapshot(q, (snapshot) => {
+                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    if (listVariableSetter) listVariableSetter(data);
+                    renderFunction(data);
+                }, (error) => console.error(`Error en ${collectionName}:`, error));
+                unsubscribeListeners.push(unsub);
+            };
+
+            createListener("zonas", "nombre", renderZonas);
+            createListener("empleados", "nombre", renderEmpleados);
+            createListener("tareas", "nombre", renderTareas, data => { tareasList = data; cargarChecklist(); });
+            createListener("historial", "fechaCompletada", renderHistorial, data => {
+                 historialList = data.map(item => ({
+                    ...item,
+                    fechaCompletada: item.fechaCompletada instanceof Timestamp ? item.fechaCompletada.toDate() : null
+                 }));
+                 cargarChecklist();
+            });
+            console.log("Listeners Firestore configurados.");
+        }
+
+        function cleanupFirestoreListeners() {
+            unsubscribeListeners.forEach(unsub => unsub());
+            unsubscribeListeners = [];
+            console.log("Listeners Firestore limpiados.");
+        }
+
+        function renderZonas(zonas) { /* ... (igual que antes) ... */
+            listaZonasUl.innerHTML = ''; zonaTareaSelect.innerHTML = '<option value="">Seleccione...</option>'; zonasMap.clear();
+            if (zonas.length === 0) { listaZonasUl.innerHTML = '<li>No hay zonas.</li>'; return; }
+            zonas.forEach(zona => {
+                zonasMap.set(zona.id, zona.nombre);
+                const li = document.createElement('li'); li.className = 'flex justify-between items-center p-2 bg-gray-50 rounded-md mb-1 text-sm';
+                li.innerHTML = `<span>${zona.nombre}</span><div>
+                ${genAI && model ? `<button data-id="${zona.id}" data-nombre="${zona.nombre}" class="sugerir-tareas-btn suggestion-btn text-xs rounded-md mr-2"><i class="fas fa-lightbulb mr-1"></i> Sugerir</button>` : ''}
+                <button data-id="${zona.id}" data-nombre="${zona.nombre}" class="eliminar-zona-btn text-red-500 hover:text-red-700 font-bold text-lg px-2">&times;</button></div>`;
+                listaZonasUl.appendChild(li); const option = document.createElement('option'); option.value = zona.id; option.textContent = zona.nombre; zonaTareaSelect.appendChild(option);
+            });
+            document.querySelectorAll('.eliminar-zona-btn').forEach(b => b.onclick = e => eliminarZona(e.currentTarget.dataset.id, e.currentTarget.dataset.nombre));
+            document.querySelectorAll('.sugerir-tareas-btn').forEach(b => b.onclick = e => handleSugerirTareasClick(e.currentTarget.dataset.id, e.currentTarget.dataset.nombre));
+        }
+        function renderEmpleados(empleados) { /* ... (igual que antes) ... */
+            listaEmpleadosUl.innerHTML = ''; empleadoCompletadoSelect.innerHTML = '<option value="">Seleccione...</option>'; empleadosMap.clear();
+            if (empleados.length === 0) { listaEmpleadosUl.innerHTML = '<li>No hay empleados.</li>'; return; }
+            empleados.forEach(e => {
+                empleadosMap.set(e.id, e.nombre);
+                const li = document.createElement('li'); li.className = 'flex justify-between items-center p-2 bg-gray-50 text-sm';
+                li.innerHTML = `<span>${e.nombre}</span><button data-id="${e.id}" data-nombre="${e.nombre}" class="eliminar-empleado-btn text-red-500 font-bold px-2 text-lg">&times;</button>`;
+                listaEmpleadosUl.appendChild(li); const o = document.createElement('option'); o.value = e.id; o.textContent = e.nombre; empleadoCompletadoSelect.appendChild(o);
+            });
+            document.querySelectorAll('.eliminar-empleado-btn').forEach(b => b.onclick = e => eliminarEmpleado(e.currentTarget.dataset.id, e.currentTarget.dataset.nombre));
+        }
+        function renderTareas(tareas) { /* ... (igual que antes) ... */
+             listaTareasUl.innerHTML = ''; if (tareas.length === 0) { listaTareasUl.innerHTML = '<li>No hay tareas.</li>'; return; }
+             tareas.forEach(t => {
+                 const li = document.createElement('li'); li.className = 'p-3 bg-gray-50 rounded-md text-sm'; const nz = zonasMap.get(t.zonaId) || '?'; let ft;
+                 if (t.frecuencia === 'fecha_especifica') { const fp = t.fechaEspecifica ? new Date(t.fechaEspecifica + 'T00:00:00') : null; ft = `Fecha Específica: ${fp ? fp.toLocaleDateString('es-ES') : 'N/A'}`; }
+                 else if (t.frecuencia === 'diaria') { ft = 'Diaria'; } else { ft = `Semanal - ${t.frecuencia.charAt(0).toUpperCase() + t.frecuencia.slice(1)}`; }
+                 li.innerHTML = `<div class="flex justify-between items-start"><div><strong class="text-base">${t.nombre}</strong><p class="text-xs text-gray-600 mt-1">${t.descripcion || '-'}</p><p class="text-xs text-gray-500 mt-1"><i class="fas fa-map-marker-alt mr-1"></i>${nz} | <i class="fas fa-redo-alt mr-1 ml-2"></i>${ft}</p></div><button data-id="${t.id}" data-nombre="${t.nombre}" class="eliminar-tarea-btn text-red-500 hover:text-red-700 font-bold text-xl px-2">&times;</button></div>`;
+                 listaTareasUl.appendChild(li);
+             });
+             document.querySelectorAll('.eliminar-tarea-btn').forEach(b => b.onclick = e => eliminarTarea(e.currentTarget.dataset.id, e.currentTarget.dataset.nombre));
+        }
+        function renderHistorial(historial) { /* ... (igual que antes) ... */
+             loadingHistorialP.textContent = "Cargando..."; tablaHistorialBody.innerHTML = '';
+             if (historial.length === 0) { loadingHistorialP.textContent = ""; tablaHistorialBody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center">No hay historial.</td></tr>`; return; }
+             loadingHistorialP.textContent = "";
+             historial.forEach((item, index) => {
+                 const tr = document.createElement('tr'); tr.className = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+                 const ff = item.fechaCompletada ? item.fechaCompletada.toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : 'N/A';
+                 tr.innerHTML = `<td class="px-6 py-4">${item.nombreTarea || '?'}</td><td class="px-6 py-4">${item.nombreZona || '?'}</td><td class="px-6 py-4">${item.nombreEmpleado || '?'}</td><td class="px-6 py-4">${ff}</td><td class="px-6 py-4">${item.observaciones || '-'}</td>`;
+                 tablaHistorialBody.appendChild(tr);
+             });
+        }
+
+        // --- CRUD Firestore ---
+        async function agregarZona(nombre) { /* ... (igual que antes) ... */
+            if (!currentUserId || !nombre) return; showLoading("Agregando...");
+            try { await addDoc(collection(db, "users", currentUserId, "zonas"), { nombre: nombre, createdAt: serverTimestamp() }); formAgregarZona.reset(); }
+            catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo agregar."); } finally { hideLoading(); }
+        }
+        async function eliminarZona(id, nombre) { /* ... (igual que antes, con chequeo) ... */
+            if (!currentUserId || !id) return; showLoading("Verificando...");
+            try { const q = query(collection(db, "users", currentUserId, "tareas"), where("zonaId", "==", id)); const snap = await getDocs(q);
+                if (!snap.empty) { mostrarMensaje("Error", `Zona "${nombre}" en uso.`); hideLoading(); return; }
+            } catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo verificar."); hideLoading(); return; }
+            hideLoading();
+            mostrarMensaje("Confirmar", `¿Eliminar zona "${nombre}"?`, true, async () => {
+                showLoading("Eliminando...");
+                try { await deleteDoc(doc(db, "users", currentUserId, "zonas", id)); }
+                catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo eliminar."); } finally { hideLoading(); }
+            });
+        }
+        async function agregarEmpleado(nombre) { /* ... (igual que antes, con chequeo) ... */
+            if (!currentUserId || !nombre) return; showLoading("Agregando...");
+            try { const q = query(collection(db, "users", currentUserId, "empleados"), where("nombre", "==", nombre)); const snap = await getDocs(q);
+                if (!snap.empty) { mostrarMensaje("Error", `Empleado "${nombre}" ya existe.`); hideLoading(); return; }
+                await addDoc(collection(db, "users", currentUserId, "empleados"), { nombre: nombre, createdAt: serverTimestamp() }); formAgregarEmpleado.reset();
+            } catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo agregar."); } finally { hideLoading(); }
+        }
+        async function eliminarEmpleado(id, nombre) { /* ... (igual que antes) ... */
+            if (!currentUserId || !id) return;
+            mostrarMensaje("Confirmar", `¿Eliminar empleado "${nombre}"?`, true, async () => {
+                showLoading("Eliminando...");
+                try { await deleteDoc(doc(db, "users", currentUserId, "empleados", id)); }
+                catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo eliminar."); } finally { hideLoading(); }
+            });
+        }
+        async function agregarTarea(nombre, descripcion, zonaId, frecuencia, fechaEspecifica) { /* ... (igual que antes) ... */
+            if (!currentUserId || !nombre || !zonaId || !frecuencia || (frecuencia === 'fecha_especifica' && !fechaEspecifica)) { mostrarMensaje("Error", "Faltan datos."); return; }
+            showLoading("Agregando...");
+            try { const nt = { nombre: nombre, descripcion: descripcion, zonaId: zonaId, frecuencia: frecuencia, createdAt: serverTimestamp(), u: null };
+                if (frecuencia === 'fecha_especifica') nt.fechaEspecifica = fechaEspecifica;
+                await addDoc(collection(db, "users", currentUserId, "tareas"), nt); formAgregarTarea.reset(); fechaEspecificaContainer.classList.add('hidden'); sugerenciasTareasContainer.classList.add('hidden');
+            } catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo agregar."); } finally { hideLoading(); }
+        }
+        async function eliminarTarea(id, nombre) { /* ... (igual que antes) ... */
+            if (!currentUserId || !id) return;
+            mostrarMensaje("Confirmar", `¿Eliminar tarea "${nombre}"?`, true, async () => {
+                showLoading("Eliminando...");
+                try { await deleteDoc(doc(db, "users", currentUserId, "tareas", id)); }
+                catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo eliminar."); } finally { hideLoading(); }
+            });
+        }
+        async function guardarTareaCompletada(tareaId, empleadoId, observaciones) { /* ... (igual que antes) ... */
+             if (!currentUserId || !tareaId || !empleadoId) { mostrarMensaje("Error", "Faltan datos."); return; } showLoading("Guardando...");
+             try { const t = tareasList.find(t => t.id === tareaId); if (!t) throw new Error("Tarea no encontrada.");
+                 await addDoc(collection(db, "users", currentUserId, "historial"), { tareaId: tareaId, nombreTarea: t.nombre, zonaId: t.zonaId, nombreZona: zonasMap.get(t.zonaId) || '?', empleadoId: empleadoId, nombreEmpleado: empleadosMap.get(empleadoId) || '?', observaciones: observaciones, fechaCompletada: serverTimestamp(), fechaCompletadaEpoch: Date.now() });
+                 await updateDoc(doc(db, "users", currentUserId, "tareas", tareaId), { u: serverTimestamp() }); modalObservaciones.style.display = 'none';
+             } catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo guardar."); } finally { hideLoading(); }
+        }
+
+        // --- Lógica Checklist ---
+        function esTareaParaHoy(tarea, hoy) { /* ... (igual que antes) ... */
+             const d = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+             if (tarea.frecuencia === 'fecha_especifica') { if (!tarea.fechaEspecifica) return false; const ft = new Date(tarea.fechaEspecifica + "T00:00:00"); return ft.toDateString() === hoy.toDateString(); }
+             return tarea.frecuencia === 'diaria' || tarea.frecuencia === d[hoy.getDay()];
+        }
+        function cargarChecklist() { /* ... (igual que antes, pero usando listas globales) ... */
+            if (!currentUserId) { loadingChecklistP.textContent = "Inicia sesión..."; tareasPendientesContainer.innerHTML = ''; return; }
+            loadingChecklistP.textContent = "Cargando..."; const hoy = new Date(); fechaActualDisplay.textContent = hoy.toLocaleDateString('es-ES',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+            const iEpoch = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).getTime(); const fEpoch = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 23, 59, 59, 999).getTime();
+            tareasPendientesContainer.innerHTML = ''; let hay = false; const tzp = {};
+            tareasList.forEach(t => {
+                if (esTareaParaHoy(t, hoy)) {
+                    const c = historialList.some(h => h.tareaId === t.id && h.fechaCompletada && h.fechaCompletada.getTime() >= iEpoch && h.fechaCompletada.getTime() <= fEpoch);
+                    if (!c) { hay = true; const nz = zonasMap.get(t.zonaId) || '?'; if (!tzp[nz]) tzp[nz] = []; tzp[nz].push(t); }
+                }
+            });
+            const zo = Object.keys(tzp).sort();
+            if (!hay) { loadingChecklistP.textContent = "No hay tareas pendientes."; } else {
+                loadingChecklistP.textContent = "";
+                zo.forEach(nz => {
+                    const zd = document.createElement('div'); zd.className = 'mb-6 p-4 border rounded-lg bg-gray-50 shadow'; zd.innerHTML = `<h3 class='text-lg font-semibold mb-3 text-primary'>${nz}</h3><ul class='space-y-3'></ul>`; const ul = zd.querySelector('ul');
+                    tzp[nz].sort((a, b) => a.nombre.localeCompare(b.nombre)).forEach(t => {
+                        const li = document.createElement('li'); li.className = 'flex items-center justify-between p-3 bg-white rounded shadow-sm';
+                        li.innerHTML = `<div><strong>${t.nombre}</strong><p class="text-sm">${t.descripcion || ''}</p></div><button data-id="${t.id}" data-nombre="${t.nombre}" data-zona="${nz}" class="completar-btn bg-secondary text-white text-sm py-1 px-3 rounded">Completar</button>`; ul.appendChild(li);
+                    });
+                    tareasPendientesContainer.appendChild(zd);
+                });
+                document.querySelectorAll('.completar-btn').forEach(b => b.onclick = e => abrirModalObservaciones(e.currentTarget.dataset.id, e.currentTarget.dataset.nombre, e.currentTarget.dataset.zona));
+            }
+        }
+
+        // --- Lógica Voz y Gemini ---
+        voiceCommandBtn.addEventListener('click', () => { /* ... (igual que antes) ... */
+             if(!recognition) { mostrarMensaje("Error", "Voz no disponible."); return; }
+             if(!genAI || !model) { mostrarMensaje("Error", "IA no configurada."); return; }
+             if(!isRecording) { try { recognition.start(); } catch(err) { console.error("Error voz:",err); voiceStatus.textContent='Error inicio voz.';}}
+             else { recognition.stop(); }
+        });
+        async function procesarComandoVoz(texto) { /* ... (igual que antes) ... */
+            if (!currentUserId || !genAI || !model) { voiceStatus.textContent = 'IA/Sesión no disponible.'; return; }
+            const en = Array.from(empleadosMap.values()); const zn = Array.from(zonasMap.values());
+            if (en.length === 0 || zn.length === 0) { voiceStatus.textContent = 'Define empleados y zonas.'; return; }
+            const prompt = `Analiza: "${texto}". Empleados: [${en.join(", ")}]. Zonas: [${zn.join(", ")}]. Responde SÓLO JSON: {"empleado": "NOMBRE_O_NULL", "zona": "NOMBRE_O_NULL"}.`;
+            try { const chat = model.startChat({}); const result = await chat.sendMessage(prompt); let rt = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim(); const data = JSON.parse(rt);
+                if (data && data.empleado && data.zona) { await marcarZonaCompleta(data.empleado, data.zona); }
+                else { voiceStatus.textContent = 'No entendí.'; mostrarMensaje("Error", 'No entendí.'); }
+            } catch (error) { console.error(error); voiceStatus.textContent = 'Error IA.'; mostrarMensaje("Error IA", `${error.message}`); }
+        }
+        async function marcarZonaCompleta(nombreEmpleado, nombreZona) { /* ... (igual que antes) ... */
+            if (!currentUserId) return;
+            const emp = [...empleadosMap.entries()].find(([id, name]) => name.toLowerCase() === nombreEmpleado.toLowerCase());
+            const zon = [...zonasMap.entries()].find(([id, name]) => name.toLowerCase() === nombreZona.toLowerCase());
+            if (!emp) { voiceStatus.textContent = `Empleado ${nombreEmpleado} no hallado.`; return; }
+            if (!zon) { voiceStatus.textContent = `Zona ${nombreZona} no hallada.`; return; }
+            const [eid, en] = emp; const [zid, zn] = zon; const hoy = new Date();
+            const iEpoch = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).getTime(); const fEpoch = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 23, 59, 59, 999).getTime();
+            let tm = 0; const tpc = [];
+            tareasList.forEach(t => { if (t.zonaId === zid && esTareaParaHoy(t, hoy)) { const c = historialList.some(h => h.tareaId === t.id && h.fechaCompletada && h.fechaCompletada.getTime() >= iEpoch && h.fechaCompletada.getTime() <= fEpoch); if (!c) tpc.push(t); } });
+            if (tpc.length > 0) { showLoading(`Marcando ${tpc.length} tareas...`);
+                for (const t of tpc) { try { await addDoc(collection(db, "users", currentUserId, "historial"), { tareaId: t.id, nombreTarea: t.nombre, zonaId: zid, nombreZona: zn, empleadoId: eid, nombreEmpleado: en, observaciones: "Por voz", fechaCompletada: serverTimestamp(), fechaCompletadaEpoch: Date.now() }); tm++; } catch (error) { console.error(error); } }
+                voiceStatus.textContent = `¡Listo! ${tm} tarea(s) en "${zn}" por ${en}.`; hideLoading();
+            } else { voiceStatus.textContent = `Tareas en "${zn}" ya completas.`; }
+        }
+
+        // --- Resto Funciones UI (Tabs, Modals, Sugerencias...) ---
+        const tabs = document.querySelectorAll('.tab-button');
+        const panes = document.querySelectorAll('.tab-pane');
+        tabs.forEach(tab => tab.addEventListener('click', () => { /* ... (igual que antes) ... */
+             tabs.forEach(item => item.classList.remove('active')); tab.classList.add('active');
+             const target = `tab-content-${tab.dataset.tab}`; panes.forEach(pane => pane.classList.toggle('hidden', pane.id !== target));
+        }));
+        function abrirModalObservaciones(id, n, z) { /* ... (igual que antes) ... */
+             currentTareaIdParaObservaciones = id; modalTareaInfoP.textContent = `Tarea: ${n} (Zona: ${z})`; observacionesTareaTextarea.value = ''; empleadoCompletadoSelect.value = '';
+             modalObservaciones.style.display = 'block'; empleadoCompletadoSelect.focus();
+        }
+        closeModalObservacionesBtn.onclick = () => modalObservaciones.style.display = 'none';
+        cancelarObservacionesBtn.onclick = () => modalObservaciones.style.display = 'none';
+        function mostrarMensaje(t, x, c = false, cb = null) { /* ... (igual que antes) ... */
+             messageModalTitle.textContent = t; messageModalText.textContent = x; messageModal.style.display = 'block'; let cf = okMessageModalBtn; let ca = document.getElementById('cancelMessageModalBtn');
+             const ncf = cf.cloneNode(true); cf.parentNode.replaceChild(ncf, cf); okMessageModalBtn = ncf; cf = okMessageModalBtn;
+             if (ca) { const nca = ca.cloneNode(true); ca.parentNode.replaceChild(nca, ca); ca = nca; }
+             if (c) { cf.textContent = 'Confirmar'; cf.className = 'px-4 py-2 text-sm text-white bg-red-600 hover:bg-red-700 rounded-md';
+                 if (!ca) { ca = document.createElement('button'); ca.id = 'cancelMessageModalBtn'; ca.className = 'ml-2 px-4 py-2 text-sm bg-gray-300 rounded-md'; cf.parentNode.insertBefore(ca, cf.nextSibling); }
+                 ca.textContent = 'Cancelar'; ca.style.display = 'inline-block'; ca.onclick = () => messageModal.style.display = 'none';
+                 cf.onclick = () => { messageModal.style.display = 'none'; if (cb) cb(); };
+             } else { cf.textContent = 'Entendido'; cf.className = 'px-4 py-2 text-sm text-white bg-primary rounded-md'; if (ca) ca.style.display = 'none'; cf.onclick = () => messageModal.style.display = 'none'; }
+        }
+        closeMessageModalBtn.onclick = () => messageModal.style.display = 'none';
+        window.onclick = e => { if (e.target == modalObservaciones) modalObservaciones.style.display = "none"; if (e.target == messageModal) messageModal.style.display = "none"; }
+        async function handleSugerirTareasClick(zonaId, nombreZona) { /* ... (igual que antes) ... */
+            if (!genAI || !model) { mostrarMensaje("Error", "IA no configurada."); return; }
+            sugerenciasTareasContainer.classList.remove('hidden'); listaSugerenciasTareas.innerHTML = ''; sugerenciasLoading.classList.remove('hidden'); sugerenciasZonaNombre.textContent = nombreZona; zonaTareaSelect.value = zonaId;
+            const prompt = `Sugiere 5-7 tareas de limpieza para "${nombreZona}". Lista simple.`;
+            try { const chat = model.startChat({}); const result = await chat.sendMessage(prompt); const text = result.response.text();
+                const ts = text.split('\n').map(t => t.trim()).filter(t => t.length > 0);
+                if (ts.length > 0) { ts.forEach(n => { const li = document.createElement('li'); li.textContent = n; li.onclick = () => { nombreTareaInput.value = n; nombreTareaInput.focus(); }; listaSugerenciasTareas.appendChild(li); }); }
+                else { listaSugerenciasTareas.innerHTML = '<li>No hay sugerencias.</li>'; }
+            } catch (error) { console.error(error); listaSugerenciasTareas.innerHTML = '<li>Error al sugerir.</li>'; }
+            finally { sugerenciasLoading.classList.add('hidden'); }
+        }
+        btnGenerarDescripcion.addEventListener('click', async () => { /* ... (igual que antes) ... */
+            if (!genAI || !model) { mostrarMensaje("Error", "IA no configurada."); return; }
+            const nt = nombreTareaInput.value.trim(); if (!nt) { mostrarMensaje("Info", "Escribe nombre."); return; }
+            descripcionLoading.classList.remove('hidden'); btnGenerarDescripcion.disabled = true;
+            const prompt = `Descripción concisa (1-2 frases) para tarea: "${nt}".`;
+            try { const chat = model.startChat({}); const result = await chat.sendMessage(prompt); descripcionTareaTextarea.value = result.response.text().trim(); }
+            catch (error) { console.error(error); mostrarMensaje("Error IA", "No se pudo generar."); }
+            finally { descripcionLoading.classList.add('hidden'); btnGenerarDescripcion.disabled = !nombreTareaInput.value.trim(); }
+        });
+
+    </script>
+</body>
+</html>
