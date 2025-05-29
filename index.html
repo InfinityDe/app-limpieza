@@ -409,15 +409,14 @@
                 loginContainer.style.display = 'block';
                 appContainer.classList.add('hidden');
                 cleanupFirestoreListeners();
-                // Limpiar UI
                 renderZonas([]); renderEmpleados([]); renderTareas([]); renderHistorial([]);
-                cargarChecklist(); // Mostrará mensaje de inicio de sesión
+                cargarChecklist();
                 hideLoading();
             }
         });
 
         // --- Inicialización IA y Voz ---
-        function initializeGemini() { /* ... (igual que antes) ... */
+        function initializeGemini() {
              if (!GEMINI_API_KEY) { console.warn("API Key de Gemini no configurada."); if(btnGenerarDescripcion) btnGenerarDescripcion.disabled = true; return; }
              try {
                  genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
@@ -425,7 +424,7 @@
                  console.log("Gemini AI inicializado."); if(btnGenerarDescripcion) btnGenerarDescripcion.disabled = !nombreTareaInput.value.trim();
              } catch(error) { console.error("Error inicializando Gemini AI:", error); mostrarMensaje("Error de IA", "No se pudo inicializar la API de Gemini."); if(btnGenerarDescripcion) btnGenerarDescripcion.disabled = true;}
         }
-        function initializeSpeechRecognition() { /* ... (igual que antes) ... */
+        function initializeSpeechRecognition() {
             const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (SpeechRecognitionAPI && voiceCommandBtn) {
                 recognition = new SpeechRecognitionAPI();
@@ -473,7 +472,7 @@
             console.log("Listeners Firestore limpiados.");
         }
 
-        function renderZonas(zonas) { /* ... (igual que antes) ... */
+        function renderZonas(zonas) {
             listaZonasUl.innerHTML = ''; zonaTareaSelect.innerHTML = '<option value="">Seleccione...</option>'; zonasMap.clear();
             if (zonas.length === 0) { listaZonasUl.innerHTML = '<li>No hay zonas.</li>'; return; }
             zonas.forEach(zona => {
@@ -487,7 +486,7 @@
             document.querySelectorAll('.eliminar-zona-btn').forEach(b => b.onclick = e => eliminarZona(e.currentTarget.dataset.id, e.currentTarget.dataset.nombre));
             document.querySelectorAll('.sugerir-tareas-btn').forEach(b => b.onclick = e => handleSugerirTareasClick(e.currentTarget.dataset.id, e.currentTarget.dataset.nombre));
         }
-        function renderEmpleados(empleados) { /* ... (igual que antes) ... */
+        function renderEmpleados(empleados) {
             listaEmpleadosUl.innerHTML = ''; empleadoCompletadoSelect.innerHTML = '<option value="">Seleccione...</option>'; empleadosMap.clear();
             if (empleados.length === 0) { listaEmpleadosUl.innerHTML = '<li>No hay empleados.</li>'; return; }
             empleados.forEach(e => {
@@ -498,7 +497,7 @@
             });
             document.querySelectorAll('.eliminar-empleado-btn').forEach(b => b.onclick = e => eliminarEmpleado(e.currentTarget.dataset.id, e.currentTarget.dataset.nombre));
         }
-        function renderTareas(tareas) { /* ... (igual que antes) ... */
+        function renderTareas(tareas) {
              listaTareasUl.innerHTML = ''; if (tareas.length === 0) { listaTareasUl.innerHTML = '<li>No hay tareas.</li>'; return; }
              tareas.forEach(t => {
                  const li = document.createElement('li'); li.className = 'p-3 bg-gray-50 rounded-md text-sm'; const nz = zonasMap.get(t.zonaId) || '?'; let ft;
@@ -509,7 +508,7 @@
              });
              document.querySelectorAll('.eliminar-tarea-btn').forEach(b => b.onclick = e => eliminarTarea(e.currentTarget.dataset.id, e.currentTarget.dataset.nombre));
         }
-        function renderHistorial(historial) { /* ... (igual que antes) ... */
+        function renderHistorial(historial) {
              loadingHistorialP.textContent = "Cargando..."; tablaHistorialBody.innerHTML = '';
              if (historial.length === 0) { loadingHistorialP.textContent = ""; tablaHistorialBody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center">No hay historial.</td></tr>`; return; }
              loadingHistorialP.textContent = "";
@@ -522,70 +521,145 @@
         }
 
         // --- CRUD Firestore ---
-        async function agregarZona(nombre) { /* ... (igual que antes) ... */
+        async function agregarZona(nombre) {
             if (!currentUserId || !nombre) return; showLoading("Agregando...");
             try { await addDoc(collection(db, "users", currentUserId, "zonas"), { nombre: nombre, createdAt: serverTimestamp() }); formAgregarZona.reset(); }
-            catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo agregar."); } finally { hideLoading(); }
+            catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo agregar la zona."); } finally { hideLoading(); }
         }
-        async function eliminarZona(id, nombre) { /* ... (igual que antes, con chequeo) ... */
+        async function eliminarZona(id, nombre) {
             if (!currentUserId || !id) return; showLoading("Verificando...");
             try { const q = query(collection(db, "users", currentUserId, "tareas"), where("zonaId", "==", id)); const snap = await getDocs(q);
-                if (!snap.empty) { mostrarMensaje("Error", `Zona "${nombre}" en uso.`); hideLoading(); return; }
-            } catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo verificar."); hideLoading(); return; }
+                if (!snap.empty) { mostrarMensaje("Error", `La Zona "${nombre}" tiene tareas asignadas y no puede ser eliminada.`); hideLoading(); return; }
+            } catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo verificar si la zona está en uso."); hideLoading(); return; }
             hideLoading();
-            mostrarMensaje("Confirmar", `¿Eliminar zona "${nombre}"?`, true, async () => {
+            mostrarMensaje("Confirmar", `¿Estás seguro de que quieres eliminar la zona "${nombre}"?`, true, async () => {
                 showLoading("Eliminando...");
                 try { await deleteDoc(doc(db, "users", currentUserId, "zonas", id)); }
-                catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo eliminar."); } finally { hideLoading(); }
+                catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo eliminar la zona."); } finally { hideLoading(); }
             });
         }
-        async function agregarEmpleado(nombre) { /* ... (igual que antes, con chequeo) ... */
+        async function agregarEmpleado(nombre) {
             if (!currentUserId || !nombre) return; showLoading("Agregando...");
             try { const q = query(collection(db, "users", currentUserId, "empleados"), where("nombre", "==", nombre)); const snap = await getDocs(q);
-                if (!snap.empty) { mostrarMensaje("Error", `Empleado "${nombre}" ya existe.`); hideLoading(); return; }
+                if (!snap.empty) { mostrarMensaje("Error", `El empleado "${nombre}" ya existe.`); hideLoading(); return; }
                 await addDoc(collection(db, "users", currentUserId, "empleados"), { nombre: nombre, createdAt: serverTimestamp() }); formAgregarEmpleado.reset();
-            } catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo agregar."); } finally { hideLoading(); }
+            } catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo agregar el empleado."); } finally { hideLoading(); }
         }
-        async function eliminarEmpleado(id, nombre) { /* ... (igual que antes) ... */
+        async function eliminarEmpleado(id, nombre) {
             if (!currentUserId || !id) return;
-            mostrarMensaje("Confirmar", `¿Eliminar empleado "${nombre}"?`, true, async () => {
+            mostrarMensaje("Confirmar", `¿Estás seguro de que quieres eliminar al empleado "${nombre}"?`, true, async () => {
                 showLoading("Eliminando...");
                 try { await deleteDoc(doc(db, "users", currentUserId, "empleados", id)); }
-                catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo eliminar."); } finally { hideLoading(); }
+                catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo eliminar el empleado."); } finally { hideLoading(); }
             });
         }
-        async function agregarTarea(nombre, descripcion, zonaId, frecuencia, fechaEspecifica) { /* ... (igual que antes) ... */
-            if (!currentUserId || !nombre || !zonaId || !frecuencia || (frecuencia === 'fecha_especifica' && !fechaEspecifica)) { mostrarMensaje("Error", "Faltan datos."); return; }
-            showLoading("Agregando...");
+        async function agregarTarea(nombre, descripcion, zonaId, frecuencia, fechaEspecifica) {
+            if (!currentUserId || !nombre || !zonaId || !frecuencia || (frecuencia === 'fecha_especifica' && !fechaEspecifica)) { mostrarMensaje("Error", "Por favor, completa todos los campos requeridos."); return; }
+            showLoading("Agregando tarea...");
             try { const nt = { nombre: nombre, descripcion: descripcion, zonaId: zonaId, frecuencia: frecuencia, createdAt: serverTimestamp(), u: null };
                 if (frecuencia === 'fecha_especifica') nt.fechaEspecifica = fechaEspecifica;
                 await addDoc(collection(db, "users", currentUserId, "tareas"), nt); formAgregarTarea.reset(); fechaEspecificaContainer.classList.add('hidden'); sugerenciasTareasContainer.classList.add('hidden');
-            } catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo agregar."); } finally { hideLoading(); }
+            } catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo agregar la tarea."); } finally { hideLoading(); }
         }
-        async function eliminarTarea(id, nombre) { /* ... (igual que antes) ... */
+        async function eliminarTarea(id, nombre) {
             if (!currentUserId || !id) return;
-            mostrarMensaje("Confirmar", `¿Eliminar tarea "${nombre}"?`, true, async () => {
-                showLoading("Eliminando...");
+            mostrarMensaje("Confirmar", `¿Estás seguro de que quieres eliminar la tarea "${nombre}"?`, true, async () => {
+                showLoading("Eliminando tarea...");
                 try { await deleteDoc(doc(db, "users", currentUserId, "tareas", id)); }
-                catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo eliminar."); } finally { hideLoading(); }
+                catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo eliminar la tarea."); } finally { hideLoading(); }
             });
         }
-        async function guardarTareaCompletada(tareaId, empleadoId, observaciones) { /* ... (igual que antes) ... */
-             if (!currentUserId || !tareaId || !empleadoId) { mostrarMensaje("Error", "Faltan datos."); return; } showLoading("Guardando...");
+        async function guardarTareaCompletada(tareaId, empleadoId, observaciones) {
+             if (!currentUserId || !tareaId || !empleadoId) { mostrarMensaje("Error", "Faltan datos para completar la tarea."); return; } showLoading("Guardando...");
              try { const t = tareasList.find(t => t.id === tareaId); if (!t) throw new Error("Tarea no encontrada.");
                  await addDoc(collection(db, "users", currentUserId, "historial"), { tareaId: tareaId, nombreTarea: t.nombre, zonaId: t.zonaId, nombreZona: zonasMap.get(t.zonaId) || '?', empleadoId: empleadoId, nombreEmpleado: empleadosMap.get(empleadoId) || '?', observaciones: observaciones, fechaCompletada: serverTimestamp(), fechaCompletadaEpoch: Date.now() });
                  await updateDoc(doc(db, "users", currentUserId, "tareas", tareaId), { u: serverTimestamp() }); modalObservaciones.style.display = 'none';
-             } catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo guardar."); } finally { hideLoading(); }
+             } catch (error) { console.error(error); mostrarMensaje("Error", "No se pudo guardar la tarea completada."); } finally { hideLoading(); }
         }
 
+        // --- Event Listeners Formularios (CORREGIDO) ---
+        if (formAgregarZona) {
+            formAgregarZona.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                const nombre = formAgregarZona.nombreZona.value.trim();
+                if (nombre) {
+                    await agregarZona(nombre);
+                } else {
+                    mostrarMensaje("Error", "El nombre de la zona no puede estar vacío.");
+                }
+            });
+        }
+
+        if (formAgregarEmpleado) {
+            formAgregarEmpleado.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                const nombre = formAgregarEmpleado.nombreEmpleado.value.trim();
+                if (nombre) {
+                    await agregarEmpleado(nombre);
+                } else {
+                    mostrarMensaje("Error", "El nombre del empleado no puede estar vacío.");
+                }
+            });
+        }
+
+        if (formAgregarTarea) {
+            formAgregarTarea.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                const nombre = nombreTareaInput.value.trim();
+                const descripcion = descripcionTareaTextarea.value.trim();
+                const zonaId = zonaTareaSelect.value;
+                const frecuencia = frecuenciaTareaSelect.value;
+                const fechaEsp = fechaEspecificaTareaInput.value;
+
+                if (!nombre || !zonaId || !frecuencia) {
+                    mostrarMensaje("Error", "Nombre, Zona y Frecuencia son campos obligatorios.");
+                    return;
+                }
+                if (frecuencia === 'fecha_especifica' && !fechaEsp) {
+                    mostrarMensaje("Error", "Por favor, selecciona una fecha para la tarea de frecuencia específica.");
+                    return;
+                }
+                await agregarTarea(nombre, descripcion, zonaId, frecuencia, fechaEsp);
+            });
+        }
+        
+        if (frecuenciaTareaSelect) {
+            frecuenciaTareaSelect.addEventListener('change', () => {
+                if (frecuenciaTareaSelect.value === 'fecha_especifica') {
+                    fechaEspecificaContainer.classList.remove('hidden');
+                    fechaEspecificaTareaInput.required = true;
+                } else {
+                    fechaEspecificaContainer.classList.add('hidden');
+                    fechaEspecificaTareaInput.required = false;
+                    fechaEspecificaTareaInput.value = '';
+                }
+            });
+        }
+
+        if (guardarObservacionesBtn) {
+            guardarObservacionesBtn.onclick = async () => { // Convertido a async para usar await
+                const empleadoIdSeleccionado = empleadoCompletadoSelect.value;
+                if (!empleadoIdSeleccionado) {
+                    mostrarMensaje("Error", "Debes seleccionar quién completó la tarea.");
+                    return;
+                }
+                await guardarTareaCompletada(
+                    currentTareaIdParaObservaciones,
+                    empleadoIdSeleccionado,
+                    observacionesTareaTextarea.value.trim()
+                );
+            };
+        }
+
+
         // --- Lógica Checklist ---
-        function esTareaParaHoy(tarea, hoy) { /* ... (igual que antes) ... */
+        function esTareaParaHoy(tarea, hoy) {
              const d = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
              if (tarea.frecuencia === 'fecha_especifica') { if (!tarea.fechaEspecifica) return false; const ft = new Date(tarea.fechaEspecifica + "T00:00:00"); return ft.toDateString() === hoy.toDateString(); }
              return tarea.frecuencia === 'diaria' || tarea.frecuencia === d[hoy.getDay()];
         }
-        function cargarChecklist() { /* ... (igual que antes, pero usando listas globales) ... */
-            if (!currentUserId) { loadingChecklistP.textContent = "Inicia sesión..."; tareasPendientesContainer.innerHTML = ''; return; }
+        function cargarChecklist() {
+            if (!currentUserId) { loadingChecklistP.textContent = "Inicia sesión para ver las tareas."; tareasPendientesContainer.innerHTML = ''; return; }
             loadingChecklistP.textContent = "Cargando..."; const hoy = new Date(); fechaActualDisplay.textContent = hoy.toLocaleDateString('es-ES',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
             const iEpoch = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).getTime(); const fEpoch = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 23, 59, 59, 999).getTime();
             tareasPendientesContainer.innerHTML = ''; let hay = false; const tzp = {};
@@ -611,13 +685,13 @@
         }
 
         // --- Lógica Voz y Gemini ---
-        voiceCommandBtn.addEventListener('click', () => { /* ... (igual que antes) ... */
+        voiceCommandBtn.addEventListener('click', () => {
              if(!recognition) { mostrarMensaje("Error", "Voz no disponible."); return; }
              if(!genAI || !model) { mostrarMensaje("Error", "IA no configurada."); return; }
              if(!isRecording) { try { recognition.start(); } catch(err) { console.error("Error voz:",err); voiceStatus.textContent='Error inicio voz.';}}
              else { recognition.stop(); }
         });
-        async function procesarComandoVoz(texto) { /* ... (igual que antes) ... */
+        async function procesarComandoVoz(texto) {
             if (!currentUserId || !genAI || !model) { voiceStatus.textContent = 'IA/Sesión no disponible.'; return; }
             const en = Array.from(empleadosMap.values()); const zn = Array.from(zonasMap.values());
             if (en.length === 0 || zn.length === 0) { voiceStatus.textContent = 'Define empleados y zonas.'; return; }
@@ -627,7 +701,7 @@
                 else { voiceStatus.textContent = 'No entendí.'; mostrarMensaje("Error", 'No entendí.'); }
             } catch (error) { console.error(error); voiceStatus.textContent = 'Error IA.'; mostrarMensaje("Error IA", `${error.message}`); }
         }
-        async function marcarZonaCompleta(nombreEmpleado, nombreZona) { /* ... (igual que antes) ... */
+        async function marcarZonaCompleta(nombreEmpleado, nombreZona) {
             if (!currentUserId) return;
             const emp = [...empleadosMap.entries()].find(([id, name]) => name.toLowerCase() === nombreEmpleado.toLowerCase());
             const zon = [...zonasMap.entries()].find(([id, name]) => name.toLowerCase() === nombreZona.toLowerCase());
@@ -646,17 +720,17 @@
         // --- Resto Funciones UI (Tabs, Modals, Sugerencias...) ---
         const tabs = document.querySelectorAll('.tab-button');
         const panes = document.querySelectorAll('.tab-pane');
-        tabs.forEach(tab => tab.addEventListener('click', () => { /* ... (igual que antes) ... */
+        tabs.forEach(tab => tab.addEventListener('click', () => {
              tabs.forEach(item => item.classList.remove('active')); tab.classList.add('active');
              const target = `tab-content-${tab.dataset.tab}`; panes.forEach(pane => pane.classList.toggle('hidden', pane.id !== target));
         }));
-        function abrirModalObservaciones(id, n, z) { /* ... (igual que antes) ... */
+        function abrirModalObservaciones(id, n, z) {
              currentTareaIdParaObservaciones = id; modalTareaInfoP.textContent = `Tarea: ${n} (Zona: ${z})`; observacionesTareaTextarea.value = ''; empleadoCompletadoSelect.value = '';
              modalObservaciones.style.display = 'block'; empleadoCompletadoSelect.focus();
         }
         closeModalObservacionesBtn.onclick = () => modalObservaciones.style.display = 'none';
         cancelarObservacionesBtn.onclick = () => modalObservaciones.style.display = 'none';
-        function mostrarMensaje(t, x, c = false, cb = null) { /* ... (igual que antes) ... */
+        function mostrarMensaje(t, x, c = false, cb = null) {
              messageModalTitle.textContent = t; messageModalText.textContent = x; messageModal.style.display = 'block'; let cf = okMessageModalBtn; let ca = document.getElementById('cancelMessageModalBtn');
              const ncf = cf.cloneNode(true); cf.parentNode.replaceChild(ncf, cf); okMessageModalBtn = ncf; cf = okMessageModalBtn;
              if (ca) { const nca = ca.cloneNode(true); ca.parentNode.replaceChild(nca, ca); ca = nca; }
@@ -668,7 +742,7 @@
         }
         closeMessageModalBtn.onclick = () => messageModal.style.display = 'none';
         window.onclick = e => { if (e.target == modalObservaciones) modalObservaciones.style.display = "none"; if (e.target == messageModal) messageModal.style.display = "none"; }
-        async function handleSugerirTareasClick(zonaId, nombreZona) { /* ... (igual que antes) ... */
+        async function handleSugerirTareasClick(zonaId, nombreZona) {
             if (!genAI || !model) { mostrarMensaje("Error", "IA no configurada."); return; }
             sugerenciasTareasContainer.classList.remove('hidden'); listaSugerenciasTareas.innerHTML = ''; sugerenciasLoading.classList.remove('hidden'); sugerenciasZonaNombre.textContent = nombreZona; zonaTareaSelect.value = zonaId;
             const prompt = `Sugiere 5-7 tareas de limpieza para "${nombreZona}". Lista simple.`;
@@ -679,7 +753,7 @@
             } catch (error) { console.error(error); listaSugerenciasTareas.innerHTML = '<li>Error al sugerir.</li>'; }
             finally { sugerenciasLoading.classList.add('hidden'); }
         }
-        btnGenerarDescripcion.addEventListener('click', async () => { /* ... (igual que antes) ... */
+        btnGenerarDescripcion.addEventListener('click', async () => {
             if (!genAI || !model) { mostrarMensaje("Error", "IA no configurada."); return; }
             const nt = nombreTareaInput.value.trim(); if (!nt) { mostrarMensaje("Info", "Escribe nombre."); return; }
             descripcionLoading.classList.remove('hidden'); btnGenerarDescripcion.disabled = true;
